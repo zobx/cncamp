@@ -1,27 +1,31 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 )
 
 func main() {
 	//环境变量
 	// os.Clearenv()
-	os.Setenv("version", "1.0.0")
-	version := os.Getenv("version")
-	http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
+	// os.Setenv("version", "1.0.0")
+	version := os.Getenv("VERSION")
+	r := http.NewServeMux()
+	r.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
 		for key, v := range r.Header {
 			value := strings.Join(v, " ")
 			rw.Header().Add(key, value)
 		}
 		rw.Header().Add("version", version)
 		rw.WriteHeader(200)
-		// fmt.Fprintf(rw, "success")
+		fmt.Fprintf(rw, "success"+version)
 		ip, err := getIP(r)
 		if err != nil {
 			fmt.Printf("getIperr:%s", err.Error())
@@ -29,12 +33,23 @@ func main() {
 		}
 		fmt.Printf("clientIp:%s HttpStatusCode %d \n", ip, 200)
 	})
-	http.HandleFunc("/healthz", func(rw http.ResponseWriter, r *http.Request) {
+	r.HandleFunc("/healthz", func(rw http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(rw, "ok")
 		rw.WriteHeader(200)
 	})
-	if err := http.ListenAndServe(":80", nil); err != nil {
-		log.Fatal(err.Error())
+	server := &http.Server{
+		Addr:    ":80",
+		Handler: r,
+	}
+	go server.ListenAndServe()
+
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+
+	select {
+	case <-sigs:
+		server.Shutdown(context.Background())
+		log.Println("http shutdown")
 	}
 }
 
